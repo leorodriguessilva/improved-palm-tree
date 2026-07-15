@@ -1,42 +1,56 @@
 package com.redcare.pharmacy.ranking.integration;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.redcare.pharmacy.ranking.domain.RepositoryCandidate;
 import com.redcare.pharmacy.ranking.exception.GitHubException;
 import com.redcare.pharmacy.ranking.service.RepositorySearchClient;
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 @Component
 public class GitHubRepositorySearchClient implements RepositorySearchClient {
 
   private final String baseUrl;
+  private final String apiVersion;
   private final String token;
   private final RestTemplate restTemplate;
-  private final ObjectMapper objectMapper;
 
   public GitHubRepositorySearchClient(
       @Value("${github.base-url:https://api.github.com}") String baseUrl,
+      @Value("${github.api-version:2026-03-10}") String apiVersion,
       @Value("${github.token:#{null}}") String token
   ) {
     this.baseUrl = baseUrl;
+    this.apiVersion = apiVersion;
     this.token = token;
     this.restTemplate = new RestTemplate();
-    this.objectMapper = new ObjectMapper();
   }
 
   @Override
   public RepositorySearchResult search(String language, LocalDate createdAfter, int page, int limit) {
     try {
       String query = buildQuery(language, createdAfter);
-      String url = buildUrl(query, page, limit);
+      URI url = buildUrl(query, page, limit);
 
-      var response = restTemplate.getForObject(url, GitHubSearchResponseDto.class);
+      var responseEntity = restTemplate.exchange(
+          url,
+          HttpMethod.GET,
+          new HttpEntity<>(buildHeaders()),
+          GitHubSearchResponseDto.class
+      );
+      var response = responseEntity.getBody();
       if (response == null) {
         throw new GitHubException(
             "INVALID_GITHUB_RESPONSE",
@@ -54,20 +68,20 @@ public class GitHubRepositorySearchClient implements RepositorySearchClient {
       return new RepositorySearchResult(repositories, response.totalCount(), response.incompleteResults());
     } catch (GitHubException e) {
       throw e;
-    } catch (org.springframework.web.client.HttpClientErrorException e) {
+    } catch (HttpClientErrorException e) {
       handleHttpClientError(e);
       throw new GitHubException(
           "INVALID_GITHUB_RESPONSE",
           "GitHub returned error: " + e.getStatusCode(),
           e.getStatusCode().value()
       );
-    } catch (org.springframework.web.client.HttpServerErrorException e) {
+    } catch (HttpServerErrorException e) {
       throw new GitHubException(
           "GITHUB_UNAVAILABLE",
           "GitHub server error: " + e.getStatusCode(),
           e.getStatusCode().value()
       );
-    } catch (org.springframework.web.client.ResourceAccessException e) {
+    } catch (ResourceAccessException e) {
       throw new GitHubException(
           "GITHUB_UNAVAILABLE",
           "Failed to reach GitHub: " + e.getMessage(),
@@ -108,17 +122,27 @@ public class GitHubRepositorySearchClient implements RepositorySearchClient {
   }
 
   private String buildQuery(String language, LocalDate createdAfter) {
-    String languageQuery = "language:" + URLEncoder.encode(language, StandardCharsets.UTF_8);
+    String languageQuery = "language:" + language;
     String dateQuery = "created:>=" + createdAfter;
     return languageQuery + " " + dateQuery;
   }
 
-  private String buildUrl(String query, int page, int limit) {
-    return baseUrl + "/search/repositories"
+  private HttpHeaders buildHeaders() {
+    HttpHeaders headers = new HttpHeaders();
+    headers.setAccept(List.of(MediaType.valueOf("application/vnd.github+json")));
+    headers.set("X-GitHub-Api-Version", apiVersion);
+    if (token != null && !token.isBlank()) {
+      headers.setBearerAuth(token);
+    }
+    return headers;
+  }
+
+  private URI buildUrl(String query, int page, int limit) {
+    return URI.create(baseUrl + "/search/repositories"
         + "?q=" + URLEncoder.encode(query, StandardCharsets.UTF_8)
         + "&sort=stars"
         + "&order=desc"
         + "&page=" + page
-        + "&per_page=" + limit;
+        + "&per_page=" + limit);
   }
 }

@@ -37,8 +37,6 @@ public class RepositoryRankingController {
       @RequestParam(defaultValue = "20") int limit,
       @RequestParam(defaultValue = "v1") String scoreVersion
   ) {
-    var correlationId = ErrorResponseDto.generateCorrelationId();
-
     var validationRequest = new RequestValidator.RankRequest(
         language,
         createdAfter,
@@ -46,7 +44,7 @@ public class RepositoryRankingController {
         limit,
         scoreVersion
     );
-    requestValidator.validate(validationRequest, correlationId);
+    requestValidator.validate(validationRequest);
 
     LocalDate createdAfterDate = LocalDate.parse(createdAfter);
     ScoreVersion version = ScoreVersion.fromString(scoreVersion);

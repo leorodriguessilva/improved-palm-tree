@@ -2,7 +2,8 @@ package com.redcare.pharmacy.ranking.service;
 
 import com.redcare.pharmacy.ranking.domain.RankingRequest;
 import com.redcare.pharmacy.ranking.domain.RankingResult;
-import com.redcare.pharmacy.ranking.domain.ScoreVersion;
+
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -18,7 +19,7 @@ public class InMemoryRankingCache implements RankingCache {
 
   public InMemoryRankingCache(
       @Value("${cache.ranking.maximum-size:500}") int maxSize,
-      @Value("${cache.ranking.ttl:5m}") java.time.Duration ttl
+      @Value("${cache.ranking.ttl:5m}") Duration ttl
   ) {
     this.maxSize = maxSize;
     this.ttlMillis = ttl.toMillis();
@@ -46,11 +47,6 @@ public class InMemoryRankingCache implements RankingCache {
       cache.clear();
     }
     cache.put(buildKey(request), new CacheEntry(result, System.currentTimeMillis()));
-  }
-
-  @Override
-  public void clear() {
-    cache.clear();
   }
 
   private String buildKey(RankingRequest request) {

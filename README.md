@@ -90,9 +90,17 @@ cache:
 
 github:
   base-url: https://api.github.com
+  api-version: "2026-03-10"
   token: ${GITHUB_TOKEN:}
   connect-timeout: 2s
   response-timeout: 5s
+  maximum-page-size: 50
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
 ```
 
 ### Optional GitHub Token
@@ -160,6 +168,19 @@ Ranks repositories by composite score.
     }
   ]
 }
+```
+
+#### Example cURL request
+
+```sh
+curl -G "http://localhost:8080/api/v1/repositories/rank" \
+  --data-urlencode "language=Java" \
+  --data-urlencode "createdAfter=2022-01-01" \
+  --data-urlencode "page=1" \
+  --data-urlencode "limit=20" \
+  --data-urlencode "scoreVersion=v1" \
+  -H "Accept: application/json" \
+  -H "User-Agent: repository-ranking-client/1.0"
 ```
 
 ### GET /health
@@ -327,6 +348,49 @@ All domain objects are records (immutable):
 
 ```bash
 ./mvnw clean verify
+```
+
+## Local development environment (asdf)
+
+This project targets Java 21 and uses Maven. If you use `asdf` to manage SDKs and tool versions, add the repository root to your asdf-managed projects by creating a `.tool-versions` file (already included) and installing the required plugins.
+
+Example (one-time setup):
+
+```bash
+# install asdf following https://asdf-vm.com/
+asdf plugin-add java
+asdf plugin-add maven
+asdf install
+asdf current
+```
+
+The included `.tool-versions` requests Java 21 and Maven 3.9.4. Adjust versions if you prefer a specific distribution (e.g. Temurin).
+
+If you don't use `asdf` you can still build with the included Maven wrapper (`./mvnw`).
+
+## Docker
+
+You can build and run the application using Docker. A multi-stage `Dockerfile` is provided which compiles the application with Maven and packages a runnable JAR.
+
+Build the image:
+
+```bash
+docker build -t repository-ranking-service:latest .
+```
+
+Run the container:
+
+```bash
+docker run --rm -p 8080:8080 repository-ranking-service:latest
+```
+
+The service will be available on `http://localhost:8080`.
+
+If you prefer a quick local build without Docker:
+
+```bash
+./mvnw clean package
+java -jar target/*.jar
 ```
 
 ## Dependencies

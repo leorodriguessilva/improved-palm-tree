@@ -7,7 +7,8 @@ import com.redcare.pharmacy.ranking.domain.RepositoryCandidate;
 import com.redcare.pharmacy.ranking.domain.ScoreBreakdown;
 import java.time.Clock;
 import java.util.Comparator;
-import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -18,6 +19,7 @@ public class DefaultRepositoryRankingService implements RepositoryRankingService
   private final RankingCache cache;
   private final Clock clock;
 
+  @Autowired
   public DefaultRepositoryRankingService(
       RepositorySearchClient searchClient,
       RepositoryScorer scorer,
@@ -52,15 +54,16 @@ public class DefaultRepositoryRankingService implements RepositoryRankingService
         request.limit()
     );
 
-    var scoredRepositories = searchResult.repositories().stream()
-        .map(candidate -> {
-          ScoreBreakdown score = scorer.score(candidate, clock);
-          return RankedRepository.from(candidate, score, 0);
-        })
+    var rank = new AtomicInteger(1);
+    var rankedRepositories = searchResult.repositories().stream()
+        .map(candidate -> new ScoredRepository(candidate, scorer.score(candidate, clock)))
         .sorted(getRankingComparator())
+        .map(scoredRepository -> RankedRepository.from(
+            scoredRepository.candidate(),
+            scoredRepository.score(),
+            rank.getAndIncrement()
+        ))
         .toList();
-
-    var rankedRepositories = assignRanks(scoredRepositories);
 
     var result = new RankingResult(
         request,
@@ -75,34 +78,15 @@ public class DefaultRepositoryRankingService implements RepositoryRankingService
     return result;
   }
 
-  private Comparator<RankedRepository> getRankingComparator() {
+  private Comparator<ScoredRepository> getRankingComparator() {
     return Comparator
-        .comparing(RankedRepository::score, Comparator.comparingDouble(ScoreBreakdown::total))
+        .comparing(ScoredRepository::score, Comparator.comparingDouble(ScoreBreakdown::total))
         .reversed()
-        .thenComparing(RankedRepository::stars, Comparator.reverseOrder())
-        .thenComparing(RankedRepository::forks, Comparator.reverseOrder())
-        .thenComparing(RankedRepository::updatedAt, Comparator.reverseOrder())
-        .thenComparing(RankedRepository::fullName);
+        .thenComparing(scoredRepository -> scoredRepository.candidate().stars(), Comparator.reverseOrder())
+        .thenComparing(scoredRepository -> scoredRepository.candidate().forks(), Comparator.reverseOrder())
+        .thenComparing(scoredRepository -> scoredRepository.candidate().updatedAt(), Comparator.reverseOrder())
+        .thenComparing(scoredRepository -> scoredRepository.candidate().fullName());
   }
 
-  private List<RankedRepository> assignRanks(List<RankedRepository> sorted) {
-    return sorted.stream()
-        .map((repo) -> RankedRepository.from(
-            new RepositoryCandidate(
-                repo.id(),
-                repo.name(),
-                repo.fullName(),
-                repo.url(),
-                repo.description(),
-                repo.language(),
-                repo.createdAt(),
-                repo.updatedAt(),
-                repo.stars(),
-                repo.forks()
-            ),
-            repo.score(),
-            sorted.indexOf(repo) + 1
-        ))
-        .toList();
-  }
+  private record ScoredRepository(RepositoryCandidate candidate, ScoreBreakdown score) {}
 }

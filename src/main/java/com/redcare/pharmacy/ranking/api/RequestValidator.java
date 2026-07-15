@@ -9,15 +9,15 @@ public class RequestValidator {
 
   private static final int MAX_LIMIT = 50;
 
-  public void validate(RankRequest request, String correlationId) {
-    validateLanguage(request.language(), correlationId);
-    validateCreatedAfter(request.createdAfter(), correlationId);
-    validatePage(request.page(), correlationId);
-    validateLimit(request.limit(), correlationId);
-    validateScoreVersion(request.scoreVersion(), correlationId);
+  public void validate(RankRequest request) {
+    validateLanguage(request.language());
+    validateCreatedAfter(request.createdAfter());
+    validatePage(request.page());
+    validateLimit(request.limit());
+    validateScoreVersion(request.scoreVersion());
   }
 
-  private void validateLanguage(String language, String correlationId) {
+  private void validateLanguage(String language) {
     if (language == null || language.isBlank()) {
       throw new ValidationException(
           "MISSING_LANGUAGE",
@@ -33,7 +33,7 @@ public class RequestValidator {
     }
   }
 
-  private void validateCreatedAfter(String createdAfter, String correlationId) {
+  private void validateCreatedAfter(String createdAfter) {
     if (createdAfter == null || createdAfter.isBlank()) {
       throw new ValidationException(
           "MISSING_CREATED_AFTER",
@@ -51,7 +51,7 @@ public class RequestValidator {
     }
   }
 
-  private void validatePage(int page, String correlationId) {
+  private void validatePage(int page) {
     if (page < 1) {
       throw new ValidationException(
           "INVALID_PAGE",
@@ -60,7 +60,7 @@ public class RequestValidator {
     }
   }
 
-  private void validateLimit(int limit, String correlationId) {
+  private void validateLimit(int limit) {
     if (limit < 1) {
       throw new ValidationException(
           "INVALID_LIMIT",
@@ -75,7 +75,7 @@ public class RequestValidator {
     }
   }
 
-  private void validateScoreVersion(String scoreVersion, String correlationId) {
+  private void validateScoreVersion(String scoreVersion) {
     try {
       com.redcare.pharmacy.ranking.domain.ScoreVersion.fromString(scoreVersion);
     } catch (IllegalArgumentException e) {

@@ -10,5 +10,4 @@ public interface RankingCache {
 
   void put(RankingRequest request, RankingResult result);
 
-  void clear();
 }
