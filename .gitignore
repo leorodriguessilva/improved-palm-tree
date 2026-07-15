@@ -1,0 +1,105 @@
+# .gitignore for a typical Java + Maven + Spring Boot project
+# Covers build outputs, IDE files, OS files, and common local configs
+
+# ===== Build / dependency directories =====
+/target/
+/build/
+/out/
+
+# Maven specific files
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+
+# Keep the maven wrapper jar if present
+!/.mvn/wrapper/maven-wrapper.jar
+# ignore wrapper properties (can be re-generated or kept out of VCS if you prefer)
+/.mvn/wrapper/maven-wrapper.properties
+
+# ===== Java =====
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+*.zip
+*.tar.gz
+hs_err_pid*
+
+# ===== Logs =====
+*.log
+logs/
+*.out
+*.err
+
+# ===== Test reports =====
+/surefire-reports/
+/failsafe-reports/
+/test-output/
+
+# ===== IDEs =====
+# IntelliJ IDEA
+/.idea/
+*.iml
+*.iws
+*.ipr
+
+# VS Code
+.vscode/
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# NetBeans
+nbproject/private/
+nbbuild/
+dist/
+nbdist/
+
+# Other editors
+*.swp
+*~
+.project
+
+# ===== OS files =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== Environment / local config =====
+# local env files that may contain secrets
+.env
+.env.local
+.env.*.local
+local.properties
+
+# Spring Boot local files
+# Keep application.yml/application.properties if they are intentionally in repo; but ignore local overrides
+application-local.yml
+application-local.properties
+
+# ===== Generated sources and idea caches =====
+/generated/
+/generated-sources/
+
+# ===== Docker =====
+**/docker-compose.override.yml
+.envrc
+
+# ===== Misc =====
+coverage/
+coverage-reports/
+*.tmp
+*.bak
+
+# Keep track of build info in CI but ignore local build metadata
+build-info.properties
+
+# End of file

@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: repository-ranking-service
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: 8080
+
+github:
+  base-url: https://api.github.com
+  api-version: "2022-11-28"
+  token: ${GITHUB_TOKEN:}
+  connect-timeout: 2s
+  response-timeout: 5s
+  maximum-page-size: 50
+
+ranking:
+  score-version: v1
+
+  weights:
+    stars: 0.60
+    forks: 0.25
+    recency: 0.15
+
+  stars:
+    reference-maximum: 100000
+
+  forks:
+    reference-maximum: 20000
+
+  recency:
+    half-life-days: 180
+
+cache:
+  ranking:
+    ttl: 5m
+    maximum-size: 500
+
+logging:
+  level:
+    com.redcare.pharmacy.ranking: INFO

@@ -1,0 +1,440 @@
+openapi: 3.0.3
+info:
+  title: Repository Ranking Service
+  description: |
+    GitHub repository ranking service using contract-first and test-first approach.
+
+    This service ranks repositories by a deterministic score based on:
+    - Stars (60% weight) - public popularity
+    - Forks (25% weight) - engagement and reuse
+    - Recency (15% weight) - recent activity
+
+    Only the GitHub `/search/repositories` endpoint is used.
+  version: 1.0.0
+  contact:
+    name: Redcare Pharmacy
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  /api/v1/repositories/rank:
+    get:
+      summary: Rank repositories by composite score
+      description: |
+        Search and rank GitHub repositories by a deterministic score combining
+        stars, forks, and recency.
+      operationId: rankRepositories
+      parameters:
+        - name: language
+          in: query
+          description: Programming language (e.g., Java, Python, Go)
+          required: true
+          schema:
+            type: string
+            minLength: 1
+          example: Java
+        - name: createdAfter
+          in: query
+          description: Earliest repository creation date (ISO 8601 format)
+          required: true
+          schema:
+            type: string
+            format: date
+          example: "2022-01-01"
+        - name: page
+          in: query
+          description: Page number (1-indexed)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          example: 1
+        - name: limit
+          in: query
+          description: Results per page (1-50)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+          example: 20
+        - name: scoreVersion
+          in: query
+          description: Ranking score version
+          required: false
+          schema:
+            type: string
+            default: v1
+          example: v1
+      responses:
+        '200':
+          description: Successful ranking result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RankingResponse'
+              examples:
+                success:
+                  $ref: '#/components/examples/RankingResponseExample'
+                empty:
+                  $ref: '#/components/examples/EmptyRankingResponseExample'
+        '400':
+          description: Invalid request parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingLanguage:
+                  $ref: '#/components/examples/MissingLanguageErrorExample'
+                invalidDate:
+                  $ref: '#/components/examples/InvalidDateErrorExample'
+        '429':
+          description: GitHub API rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Invalid or unexpected GitHub response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: GitHub service unavailable or timeout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /health:
+    get:
+      summary: Health check endpoint
+      operationId: health
+      responses:
+        '200':
+          description: Service is healthy
+
+  /health/readiness:
+    get:
+      summary: Readiness check endpoint
+      operationId: readiness
+      responses:
+        '200':
+          description: Service is ready
+
+  /api-docs:
+    get:
+      summary: OpenAPI specification
+      operationId: apiDocs
+      responses:
+        '200':
+          description: OpenAPI specification
+
+components:
+  schemas:
+    RankingResponse:
+      type: object
+      required:
+        - query
+        - scoreVersion
+        - generatedAt
+        - pagination
+        - repositories
+      properties:
+        query:
+          $ref: '#/components/schemas/QueryInfo'
+        scoreVersion:
+          type: string
+          example: v1
+          description: Ranking score version
+        generatedAt:
+          type: string
+          format: date-time
+          description: Timestamp when response was generated
+        pagination:
+          $ref: '#/components/schemas/PaginationInfo'
+        repositories:
+          type: array
+          items:
+            $ref: '#/components/schemas/RankedRepository'
+          description: Ranked repositories
+
+    QueryInfo:
+      type: object
+      required:
+        - language
+        - createdAfter
+        - page
+        - limit
+      properties:
+        language:
+          type: string
+          example: Java
+        createdAfter:
+          type: string
+          format: date
+          example: "2022-01-01"
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+
+    PaginationInfo:
+      type: object
+      required:
+        - page
+        - limit
+        - returnedCount
+        - githubTotalCount
+        - incompleteResults
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        limit:
+          type: integer
+          description: Results per page
+          example: 20
+        returnedCount:
+          type: integer
+          description: Number of repositories in this response
+          example: 20
+        githubTotalCount:
+          type: integer
+          description: Total count from GitHub search
+          example: 12345
+        incompleteResults:
+          type: boolean
+          description: Whether GitHub returned incomplete results
+          example: false
+
+    RankedRepository:
+      type: object
+      required:
+        - id
+        - name
+        - fullName
+        - url
+        - language
+        - createdAt
+        - updatedAt
+        - stars
+        - forks
+        - score
+        - rank
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 123456
+        name:
+          type: string
+          example: example
+        fullName:
+          type: string
+          example: owner/example
+        url:
+          type: string
+          format: uri
+          example: "https://github.com/owner/example"
+        description:
+          type: string
+          nullable: true
+          example: "Example repository description"
+        language:
+          type: string
+          example: Java
+        createdAt:
+          type: string
+          format: date-time
+          example: "2022-03-01T10:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-07-14T10:00:00Z"
+        stars:
+          type: integer
+          example: 25000
+        forks:
+          type: integer
+          example: 4100
+        score:
+          $ref: '#/components/schemas/ScoreBreakdown'
+        rank:
+          type: integer
+          description: Rank in result set (1-indexed)
+          example: 1
+
+    ScoreBreakdown:
+      type: object
+      required:
+        - total
+        - starsContribution
+        - forksContribution
+        - recencyContribution
+      properties:
+        total:
+          type: number
+          format: double
+          description: Final score (0.0-100.0), rounded to 2 decimals
+          example: 74.36
+        starsContribution:
+          type: number
+          format: double
+          description: Stars component contribution (0.0-100.0), rounded to 2 decimals
+          example: 45.12
+        forksContribution:
+          type: number
+          format: double
+          description: Forks component contribution (0.0-100.0), rounded to 2 decimals
+          example: 17.31
+        recencyContribution:
+          type: number
+          format: double
+          description: Recency component contribution (0.0-100.0), rounded to 2 decimals
+          example: 11.93
+
+    ErrorResponse:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - detail
+        - instance
+        - errorCode
+        - timestamp
+        - correlationId
+      properties:
+        type:
+          type: string
+          format: uri
+          example: "https://example.com/problems/invalid-request"
+        title:
+          type: string
+          example: Invalid request
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          example: "createdAfter must use ISO date format yyyy-MM-dd"
+        instance:
+          type: string
+          example: "/api/v1/repositories/rank"
+        errorCode:
+          type: string
+          description: Stable error code for client handling
+          example: INVALID_CREATED_AFTER
+          enum:
+            - MISSING_LANGUAGE
+            - INVALID_LANGUAGE
+            - MISSING_CREATED_AFTER
+            - INVALID_CREATED_AFTER
+            - INVALID_PAGE
+            - INVALID_LIMIT
+            - INVALID_SCORE_VERSION
+            - GITHUB_RATE_LIMITED
+            - GITHUB_UNAVAILABLE
+            - INVALID_GITHUB_RESPONSE
+            - INTERNAL_ERROR
+        retryAfter:
+          type: integer
+          description: Seconds to wait before retrying (optional, for 429 responses)
+          example: 60
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-07-15T15:00:00Z"
+        correlationId:
+          type: string
+          format: uuid
+          example: "d0e79977-4afe-48ea-9eb0-14731ae773f6"
+
+  examples:
+    RankingResponseExample:
+      value:
+        query:
+          language: Java
+          createdAfter: "2022-01-01"
+          page: 1
+          limit: 20
+        scoreVersion: v1
+        generatedAt: "2026-07-15T15:00:00Z"
+        pagination:
+          page: 1
+          limit: 20
+          returnedCount: 20
+          githubTotalCount: 12345
+          incompleteResults: false
+        repositories:
+          - id: 123
+            name: example
+            fullName: owner/example
+            url: "https://github.com/owner/example"
+            description: Example repository
+            language: Java
+            createdAt: "2022-03-01T10:00:00Z"
+            updatedAt: "2026-07-14T10:00:00Z"
+            stars: 25000
+            forks: 4100
+            score:
+              total: 74.36
+              starsContribution: 45.12
+              forksContribution: 17.31
+              recencyContribution: 11.93
+            rank: 1
+
+    EmptyRankingResponseExample:
+      value:
+        query:
+          language: Java
+          createdAfter: "2099-01-01"
+          page: 1
+          limit: 20
+        scoreVersion: v1
+        generatedAt: "2026-07-15T15:00:00Z"
+        pagination:
+          page: 1
+          limit: 20
+          returnedCount: 0
+          githubTotalCount: 0
+          incompleteResults: false
+        repositories: []
+
+    MissingLanguageErrorExample:
+      value:
+        type: "https://example.com/problems/invalid-request"
+        title: Invalid request
+        status: 400
+        detail: "language parameter is required"
+        instance: "/api/v1/repositories/rank"
+        errorCode: MISSING_LANGUAGE
+        timestamp: "2026-07-15T15:00:00Z"
+        correlationId: "d0e79977-4afe-48ea-9eb0-14731ae773f6"
+
+    InvalidDateErrorExample:
+      value:
+        type: "https://example.com/problems/invalid-request"
+        title: Invalid request
+        status: 400
+        detail: "createdAfter must use ISO date format yyyy-MM-dd"
+        instance: "/api/v1/repositories/rank"
+        errorCode: INVALID_CREATED_AFTER
+        timestamp: "2026-07-15T15:00:00Z"
+        correlationId: "d0e79977-4afe-48ea-9eb0-14731ae773f6"
