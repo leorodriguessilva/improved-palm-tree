@@ -118,6 +118,39 @@ Without a token, the service uses unauthenticated requests and is more likely to
 
 ## API
 
+### Ranking Scope and Candidate Window
+
+The API does not attempt to determine the most popular repository on GitHub globally.
+
+Instead, GitHub Search is used to produce a bounded candidate window based on the request filters, such as:
+
+- programming language;
+- earliest creation date;
+- candidate limit;
+- GitHub's initial repository ordering.
+
+The application then applies its own scoring formula to the repositories contained in that window and returns the highest-ranked candidates from that set.
+
+Therefore, a repository's rank means:
+
+> Its relative position among the repositories evaluated for the current filtered candidate window.
+
+It does not mean:
+
+> Its absolute position among every repository on GitHub or every repository matching the filters.
+
+This bounded approach is intentional. It provides:
+
+- predictable execution time;
+- a fixed and controlled number of GitHub API calls;
+- controlled rate-limit usage;
+- deterministic scoring within the evaluated set;
+- a practical and clearly defined scope for the API.
+
+For example, the service may retrieve a fixed window of repositories returned by GitHub for a given language and creation-date filter, score those candidates, sort them using the configured ranking model, and then return the ranked result.
+
+The API should therefore be understood as selecting the **best repositories within the evaluated candidate window**, rather than calculating a global GitHub popularity ranking.
+
 ### GET /api/v1/repositories/rank
 
 Ranks repositories by composite score.
