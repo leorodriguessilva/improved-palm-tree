@@ -24,6 +24,9 @@ public record GitHubRepositoryDto(
 ) {
 
   public RepositoryCandidate toDomain() {
+    if (updatedAt == null) {
+      throw new IllegalArgumentException("GitHub repository updated_at is required");
+    }
     return new RepositoryCandidate(
         id,
         name,

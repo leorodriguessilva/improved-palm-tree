@@ -97,6 +97,7 @@ github:
   maximum-page-size: 50
   retry:
     max-attempts: 3
+    backoff-delays: 100ms,250ms
 
 springdoc:
   api-docs:
@@ -142,7 +143,7 @@ It does not mean:
 This bounded approach is intentional. It provides:
 
 - predictable execution time;
-- a fixed and controlled number of GitHub API calls;
+- a bounded and controlled number of GitHub API calls;
 - controlled rate-limit usage;
 - deterministic scoring within the evaluated set;
 - a practical and clearly defined scope for the API.
@@ -268,11 +269,12 @@ Cache is per-instance and stored in memory. TTL and maximum size are enforced by
 
 The service uses only the GitHub `/search/repositories` endpoint:
 
-- Single API call per uncached request
+- One GitHub search operation is performed per uncached request. Under normal conditions this results in one HTTP call; configured retries may issue additional calls after transient failures.
 - No additional enrichment calls
 - No commit history, contributor, or security data
 - Handles GitHub rate-limit responses returned as `429` or as `403` with `X-RateLimit-Remaining: 0`
 - Uses `Retry-After` or `X-RateLimit-Reset` when GitHub provides retry metadata
+- Retries transient timeouts, connection problems, and GitHub `5xx` responses with configurable bounded backoff
 
 ## Limitations
 

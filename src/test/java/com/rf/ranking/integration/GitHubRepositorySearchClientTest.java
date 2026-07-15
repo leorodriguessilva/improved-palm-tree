@@ -14,8 +14,9 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.rf.ranking.exception.GitHubException;
-import com.rf.ranking.service.RepositorySearchClient;
 import java.net.SocketTimeoutException;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -108,6 +109,12 @@ class GitHubRepositorySearchClientTest {
 
     assertThat(result.repositories()).isEmpty();
     server.verify();
+  }
+
+  @Test
+  void retryBackoffDelayConfigurationIsParsed() {
+    assertThat(GitHubRepositorySearchClient.parseBackoffDelays("100ms,250ms"))
+        .containsExactly(Duration.ofMillis(100), Duration.ofMillis(250));
   }
 
   @Test
@@ -235,42 +242,176 @@ class GitHubRepositorySearchClientTest {
   }
 
   @Test
-  void emptyItemsAreParsed() {
-    var result = new RepositorySearchClient.RepositorySearchResult(
-        java.util.List.of(),
-        0,
-        false
-    );
+  void searchRepositoriesMapsSuccessfulGitHubJsonToDomainCandidate() {
+    var restTemplate = new RestTemplate();
+    var client = newClient("2026-03-10", "", restTemplate, 3);
+    var server = bindServer(restTemplate);
+    var url = "https://api.github.test/search/repositories"
+        + "?q=language%3AJava+created%3A%3E%3D2022-01-01"
+        + "&sort=stars&order=desc&page=1&per_page=5";
 
-    assertThat(result.repositories()).isEmpty();
-    assertThat(result.totalCount()).isEqualTo(0);
+    server.expect(once(), requestTo(url))
+        .andRespond(withSuccess("""
+            {
+              "total_count": 1,
+              "incomplete_results": false,
+              "items": [{
+                "id": 123,
+                "name": "example",
+                "full_name": "owner/example",
+                "html_url": "https://github.com/owner/example",
+                "description": "Example repository",
+                "language": "Java",
+                "created_at": "2022-01-01T00:00:00Z",
+                "updated_at": "2026-07-01T00:00:00Z",
+                "stargazers_count": 1000,
+                "forks_count": 100
+              }]
+            }
+            """, MediaType.APPLICATION_JSON));
+
+    var result = client.search("Java", LocalDate.parse("2022-01-01"), 1, 5);
+
+    assertThat(result.totalCount()).isEqualTo(1);
+    assertThat(result.incompleteResults()).isFalse();
+    assertThat(result.repositories()).hasSize(1);
+    var repository = result.repositories().get(0);
+    assertThat(repository.id()).isEqualTo(123L);
+    assertThat(repository.name()).isEqualTo("example");
+    assertThat(repository.fullName()).isEqualTo("owner/example");
+    assertThat(repository.url()).isEqualTo("https://github.com/owner/example");
+    assertThat(repository.description()).isEqualTo("Example repository");
+    assertThat(repository.language()).isEqualTo("Java");
+    assertThat(repository.createdAt()).isEqualTo(Instant.parse("2022-01-01T00:00:00Z"));
+    assertThat(repository.updatedAt()).isEqualTo(Instant.parse("2026-07-01T00:00:00Z"));
+    assertThat(repository.stars()).isEqualTo(1000);
+    assertThat(repository.forks()).isEqualTo(100);
+    server.verify();
   }
 
   @Test
-  void resultsAreParsed() {
-    var candidate = new com.rf.ranking.domain.RepositoryCandidate(
-        123L,
-        "example",
-        "owner/example",
-        "https://github.com/owner/example",
-        "Example repository",
-        "Java",
-        java.time.Instant.parse("2022-03-01T10:00:00Z"),
-        java.time.Instant.parse("2026-07-14T10:00:00Z"),
-        1000,
-        100
-    );
+  void searchRepositoriesMapsNullItemsToEmptyResult() {
+    var restTemplate = new RestTemplate();
+    var client = newClient("2026-03-10", "", restTemplate, 3);
+    var server = bindServer(restTemplate);
 
-    var result = new RepositorySearchClient.RepositorySearchResult(
-        java.util.List.of(candidate),
-        1,
-        false
-    );
+    server.expect(once(), requestTo("https://api.github.test/search/repositories"
+            + "?q=language%3AJava+created%3A%3E%3D2026-01-01"
+            + "&sort=stars&order=desc&page=1&per_page=5"))
+        .andRespond(withSuccess("""
+            {
+              "total_count": 0,
+              "incomplete_results": false,
+              "items": null
+            }
+            """, MediaType.APPLICATION_JSON));
+
+    var result = client.search("Java", LocalDate.parse("2026-01-01"), 1, 5);
+
+    assertThat(result.repositories()).isEmpty();
+    assertThat(result.totalCount()).isEqualTo(0);
+    server.verify();
+  }
+
+  @Test
+  void searchRepositoriesSupportsNullableDescription() {
+    var restTemplate = new RestTemplate();
+    var client = newClient("2026-03-10", "", restTemplate, 3);
+    var server = bindServer(restTemplate);
+
+    server.expect(once(), requestTo("https://api.github.test/search/repositories"
+            + "?q=language%3AJava+created%3A%3E%3D2026-01-01"
+            + "&sort=stars&order=desc&page=1&per_page=5"))
+        .andRespond(withSuccess("""
+            {
+              "total_count": 1,
+              "incomplete_results": false,
+              "items": [{
+                "id": 123,
+                "name": "example",
+                "full_name": "owner/example",
+                "html_url": "https://github.com/owner/example",
+                "description": null,
+                "language": "Java",
+                "created_at": "2022-01-01T00:00:00Z",
+                "updated_at": "2026-07-01T00:00:00Z",
+                "stargazers_count": 1000,
+                "forks_count": 100
+              }]
+            }
+            """, MediaType.APPLICATION_JSON));
+
+    var result = client.search("Java", LocalDate.parse("2026-01-01"), 1, 5);
 
     assertThat(result.repositories()).hasSize(1);
-    assertThat(result.repositories().get(0).name()).isEqualTo("example");
-    assertThat(result.totalCount()).isEqualTo(1);
-    assertThat(result.incompleteResults()).isFalse();
+    assertThat(result.repositories().get(0).description()).isNull();
+    server.verify();
+  }
+
+  @Test
+  void searchRepositoriesMapsMalformedJsonToBadGateway() {
+    assertInvalidGitHubJsonMapsToBadGateway("{");
+  }
+
+  @Test
+  void searchRepositoriesMapsInvalidUpdatedAtToBadGateway() {
+    assertInvalidGitHubJsonMapsToBadGateway("""
+        {
+          "total_count": 1,
+          "incomplete_results": false,
+          "items": [{
+            "id": 123,
+            "name": "example",
+            "full_name": "owner/example",
+            "html_url": "https://github.com/owner/example",
+            "description": "Example repository",
+            "language": "Java",
+            "created_at": "2022-01-01T00:00:00Z",
+            "updated_at": "not-a-timestamp",
+            "stargazers_count": 1000,
+            "forks_count": 100
+          }]
+        }
+        """);
+  }
+
+  @Test
+  void searchRepositoriesMapsMissingUpdatedAtToBadGateway() {
+    assertInvalidGitHubJsonMapsToBadGateway("""
+        {
+          "total_count": 1,
+          "incomplete_results": false,
+          "items": [{
+            "id": 123,
+            "name": "example",
+            "full_name": "owner/example",
+            "html_url": "https://github.com/owner/example",
+            "description": "Example repository",
+            "language": "Java",
+            "created_at": "2022-01-01T00:00:00Z",
+            "stargazers_count": 1000,
+            "forks_count": 100
+          }]
+        }
+        """);
+  }
+
+  private void assertInvalidGitHubJsonMapsToBadGateway(String responseBody) {
+    var restTemplate = new RestTemplate();
+    var client = newClient("2026-03-10", "", restTemplate, 3);
+    var server = bindServer(restTemplate);
+
+    server.expect(once(), requestTo("https://api.github.test/search/repositories"
+            + "?q=language%3AJava+created%3A%3E%3D2026-01-01"
+            + "&sort=stars&order=desc&page=1&per_page=5"))
+        .andRespond(withSuccess(responseBody, MediaType.APPLICATION_JSON));
+
+    assertThatThrownBy(() -> client.search("Java", LocalDate.parse("2026-01-01"), 1, 5))
+        .isInstanceOfSatisfying(GitHubException.class, exception -> {
+          assertThat(exception.getErrorCode()).isEqualTo("INVALID_GITHUB_RESPONSE");
+          assertThat(exception.getHttpStatus()).isEqualTo(502);
+        });
+    server.verify();
   }
 
   private GitHubRepositorySearchClient newClient(
@@ -284,7 +425,8 @@ class GitHubRepositorySearchClientTest {
         apiVersion,
         token,
         restTemplate,
-        maxAttempts
+        maxAttempts,
+        "0ms,0ms"
     );
   }
 

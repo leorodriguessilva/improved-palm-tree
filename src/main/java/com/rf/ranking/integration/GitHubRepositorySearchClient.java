@@ -3,14 +3,19 @@ package com.rf.ranking.integration;
 import com.rf.ranking.domain.RepositoryCandidate;
 import com.rf.ranking.exception.GitHubException;
 import com.rf.ranking.service.RepositorySearchClient;
+import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.convert.DurationStyle;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -30,19 +35,26 @@ public class GitHubRepositorySearchClient implements RepositorySearchClient {
   private final String token;
   private final RestTemplate restTemplate;
   private final int maxAttempts;
+  private final List<Duration> retryBackoffDelays;
 
+  @Autowired
   public GitHubRepositorySearchClient(
       @Value("${github.base-url:https://api.github.com}") String baseUrl,
       @Value("${github.api-version:2026-03-10}") String apiVersion,
       @Value("${github.token:#{null}}") String token,
       @Qualifier("githubRestTemplate") RestTemplate restTemplate,
-      @Value("${github.retry.max-attempts:3}") int maxAttempts
+      @Value("${github.retry.max-attempts:3}") int maxAttempts,
+      @Value("${github.retry.backoff-delays:100ms,250ms}") String retryBackoffDelays
   ) {
     this.baseUrl = baseUrl;
     this.apiVersion = apiVersion;
     this.token = token;
     this.restTemplate = restTemplate;
     this.maxAttempts = Math.max(1, maxAttempts);
+    var parsedRetryBackoffDelays = parseBackoffDelays(retryBackoffDelays);
+    this.retryBackoffDelays = parsedRetryBackoffDelays.isEmpty()
+        ? List.of(Duration.ZERO)
+        : List.copyOf(parsedRetryBackoffDelays);
   }
 
   @Override
@@ -122,10 +134,36 @@ public class GitHubRepositorySearchClient implements RepositorySearchClient {
         if (attempt == maxAttempts) {
           throw e;
         }
+        delayBeforeNextAttempt(attempt + 1);
       }
     }
 
     throw new IllegalStateException("Retry loop completed without returning or throwing");
+  }
+
+  private void delayBeforeNextAttempt(int nextAttempt) {
+    Duration delay = retryBackoffDelays.get(Math.min(nextAttempt - 2, retryBackoffDelays.size() - 1));
+    if (delay.isZero() || delay.isNegative()) {
+      return;
+    }
+    try {
+      Thread.sleep(delay.toMillis());
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new ResourceAccessException("Interrupted during GitHub retry backoff", new IOException(e));
+    }
+  }
+
+  static List<Duration> parseBackoffDelays(String value) {
+    if (value == null || value.isBlank()) {
+      return List.of(Duration.ZERO);
+    }
+    var delays = Arrays.stream(value.split(","))
+        .map(String::trim)
+        .filter(delay -> !delay.isEmpty())
+        .map(DurationStyle::detectAndParse)
+        .toList();
+    return delays.isEmpty() ? List.of(Duration.ZERO) : delays;
   }
 
   private void handleHttpClientError(HttpClientErrorException e) {

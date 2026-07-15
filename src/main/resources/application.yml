@@ -23,6 +23,7 @@ github:
   maximum-page-size: 50
   retry:
     max-attempts: 3
+    backoff-delays: 100ms,250ms
 
 ranking:
   score-version: v1

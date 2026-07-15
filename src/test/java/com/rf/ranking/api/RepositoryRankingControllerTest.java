@@ -2,9 +2,11 @@ package com.rf.ranking.api;
 
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.blankOrNullString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -62,13 +64,41 @@ class RepositoryRankingControllerTest {
 		.andExpect(jsonPath("$.query.limit").value(20))
 		.andExpect(jsonPath("$.scoreVersion").value("v1"))
 		.andExpect(jsonPath("$.generatedAt").value("2026-07-15T12:00:00Z"))
+		.andExpect(jsonPath("$.pagination.page").value(1))
+		.andExpect(jsonPath("$.pagination.limit").value(20))
 		.andExpect(jsonPath("$.pagination.returnedCount").value(1))
 		.andExpect(jsonPath("$.pagination.githubTotalCount").value(1))
 		.andExpect(jsonPath("$.pagination.incompleteResults").value(false))
 		.andExpect(jsonPath("$.repositories[0].id").value(123))
+		.andExpect(jsonPath("$.repositories[0].name").value("example"))
 		.andExpect(jsonPath("$.repositories[0].fullName").value("owner/example"))
+		.andExpect(jsonPath("$.repositories[0].url").value("https://github.com/owner/example"))
+		.andExpect(jsonPath("$.repositories[0].description").value("Example repository"))
+		.andExpect(jsonPath("$.repositories[0].language").value("Java"))
+		.andExpect(jsonPath("$.repositories[0].createdAt").value("2022-03-01T10:00:00Z"))
+		.andExpect(jsonPath("$.repositories[0].updatedAt").value("2026-07-14T10:00:00Z"))
+		.andExpect(jsonPath("$.repositories[0].stars").value(25000))
+		.andExpect(jsonPath("$.repositories[0].forks").value(4100))
 		.andExpect(jsonPath("$.repositories[0].score.total").value(74.36))
+		.andExpect(jsonPath("$.repositories[0].score.starsContribution").value(45.12))
+		.andExpect(jsonPath("$.repositories[0].score.forksContribution").value(17.31))
+		.andExpect(jsonPath("$.repositories[0].score.recencyContribution").value(11.93))
 		.andExpect(jsonPath("$.repositories[0].rank").value(1));
+  }
+
+  @Test
+  void missingScoreVersionUsesConfiguredDefault() throws Exception {
+	when(rankingService.rank(any(RankingRequest.class))).thenReturn(resultWithOneRepository());
+
+	mockMvc.perform(get("/api/v1/repositories/rank")
+			.param("language", "Java")
+			.param("createdAfter", "2026-01-01")
+			.param("page", "1")
+			.param("limit", "20")
+			.accept(MediaType.APPLICATION_JSON))
+		.andExpect(status().isOk())
+		.andExpect(jsonPath("$.scoreVersion").value("v1"));
+	verify(rankingService).rank(argThat(request -> request.scoreVersion() == ScoreVersion.V1));
   }
 
   @Test
@@ -89,7 +119,13 @@ class RepositoryRankingControllerTest {
   void missingLanguageReturns400() throws Exception {
 	mockMvc.perform(get("/api/v1/repositories/rank").param("createdAfter", "2026-01-01"))
 		.andExpect(status().isBadRequest())
+		.andExpect(jsonPath("$.type").value("https://example.com/problems/invalid-request"))
+		.andExpect(jsonPath("$.title").value("Invalid request"))
+		.andExpect(jsonPath("$.status").value(400))
+		.andExpect(jsonPath("$.detail").value("language parameter is required"))
+		.andExpect(jsonPath("$.instance").value("/api/v1/repositories/rank"))
 		.andExpect(jsonPath("$.errorCode").value("MISSING_LANGUAGE"))
+		.andExpect(jsonPath("$.timestamp", not(blankOrNullString())))
 		.andExpect(jsonPath("$.correlationId", not(blankOrNullString())));
 	verifyNoInteractions(rankingService);
   }
@@ -175,8 +211,15 @@ class RepositoryRankingControllerTest {
 	doThrow(new IllegalStateException("jdbc:postgresql://internal-host/socket failed"))
 		.when(rankingService).rank(any(RankingRequest.class));
 	mockMvc.perform(validRequest()).andExpect(status().isInternalServerError())
+		.andExpect(jsonPath("$.type").value("https://example.com/problems/invalid-request"))
+		.andExpect(jsonPath("$.title").value("Internal server error"))
+		.andExpect(jsonPath("$.status").value(500))
 		.andExpect(jsonPath("$.detail").value("An unexpected error occurred"))
-		.andExpect(jsonPath("$.detail").value(not("jdbc:postgresql://internal-host/socket failed")));
+		.andExpect(jsonPath("$.detail").value(not("jdbc:postgresql://internal-host/socket failed")))
+		.andExpect(jsonPath("$.instance").value("/api/v1/repositories/rank"))
+		.andExpect(jsonPath("$.errorCode").value("INTERNAL_ERROR"))
+		.andExpect(jsonPath("$.timestamp", not(blankOrNullString())))
+		.andExpect(jsonPath("$.correlationId", not(blankOrNullString())));
   }
 
   @Test

@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 
 class RequestValidatorTest {
 
-  private final RequestValidator validator = new RequestValidator();
+  private final RequestValidator validator = new RequestValidator(50);
 
   @Test
   void validRequestPasses() {
@@ -52,6 +52,17 @@ class RequestValidatorTest {
 	assertValidationError(request("Java", "2026-01-01", -1, 20, "v1"), "INVALID_PAGE");
 	assertValidationError(request("Java", "2026-01-01", 1, 0, "v1"), "INVALID_LIMIT");
 	assertValidationError(request("Java", "2026-01-01", 1, 51, "v1"), "INVALID_LIMIT");
+  }
+
+  @Test
+  void configuredMaximumPageSizeIsAuthoritative() {
+	var smallerLimitValidator = new RequestValidator(25);
+
+	assertThatCode(() -> smallerLimitValidator.validate(request("Java", "2026-01-01", 1, 25, "v1")))
+		.doesNotThrowAnyException();
+	assertThatThrownBy(() -> smallerLimitValidator.validate(request("Java", "2026-01-01", 1, 26, "v1")))
+		.isInstanceOfSatisfying(ValidationException.class,
+			exception -> org.assertj.core.api.Assertions.assertThat(exception.getMessage()).isEqualTo("limit must be <= 25"));
   }
 
   @Test

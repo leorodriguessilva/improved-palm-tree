@@ -2,12 +2,17 @@ package com.rf.ranking.api;
 
 import com.rf.ranking.exception.ValidationException;
 import java.time.LocalDate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
 public class RequestValidator {
 
-  private static final int MAX_LIMIT = 50;
+  private final int maximumPageSize;
+
+  public RequestValidator(@Value("${github.maximum-page-size:50}") int maximumPageSize) {
+    this.maximumPageSize = maximumPageSize;
+  }
 
   public void validate(RankRequest request) {
     validateLanguage(request.language());
@@ -67,10 +72,10 @@ public class RequestValidator {
           "limit must be >= 1"
       );
     }
-    if (limit > MAX_LIMIT) {
+    if (limit > maximumPageSize) {
       throw new ValidationException(
           "INVALID_LIMIT",
-          "limit must be <= " + MAX_LIMIT
+          "limit must be <= " + maximumPageSize
       );
     }
   }

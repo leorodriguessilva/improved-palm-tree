@@ -6,6 +6,9 @@ import com.rf.ranking.exception.GitHubException;
 import com.rf.ranking.exception.ValidationException;
 import com.rf.ranking.service.RepositoryRankingService;
 import java.time.LocalDate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,15 +21,20 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 @RequestMapping("/api/v1")
 public class RepositoryRankingController {
 
+  private static final Logger log = LoggerFactory.getLogger(RepositoryRankingController.class);
+
   private final RepositoryRankingService rankingService;
   private final RequestValidator requestValidator;
+  private final String defaultScoreVersion;
 
   public RepositoryRankingController(
       RepositoryRankingService rankingService,
-      RequestValidator requestValidator
+      RequestValidator requestValidator,
+      @Value("${ranking.score-version:v1}") String defaultScoreVersion
   ) {
     this.rankingService = rankingService;
     this.requestValidator = requestValidator;
+    this.defaultScoreVersion = defaultScoreVersion;
   }
 
   @GetMapping("/repositories/rank")
@@ -35,19 +43,20 @@ public class RepositoryRankingController {
       @RequestParam(required = false) String createdAfter,
       @RequestParam(defaultValue = "1") int page,
       @RequestParam(defaultValue = "20") int limit,
-      @RequestParam(defaultValue = "v1") String scoreVersion
+      @RequestParam(required = false) String scoreVersion
   ) {
+    String requestedScoreVersion = scoreVersion != null ? scoreVersion : defaultScoreVersion;
     var validationRequest = new RequestValidator.RankRequest(
         language,
         createdAfter,
         page,
         limit,
-        scoreVersion
+        requestedScoreVersion
     );
     requestValidator.validate(validationRequest);
 
     LocalDate createdAfterDate = LocalDate.parse(createdAfter);
-    ScoreVersion version = ScoreVersion.fromString(scoreVersion);
+    ScoreVersion version = ScoreVersion.fromString(requestedScoreVersion);
 
     var rankingRequest = new RankingRequest(language, createdAfterDate, page, limit, version);
     var result = rankingService.rank(rankingRequest);
@@ -109,8 +118,9 @@ public class RepositoryRankingController {
   }
 
   @ExceptionHandler(Exception.class)
-  public ResponseEntity<ErrorResponseDto> handleException() {
+  public ResponseEntity<ErrorResponseDto> handleException(Exception exception) {
     var correlationId = ErrorResponseDto.generateCorrelationId();
+    log.error("Unexpected request failure. correlationId={}", correlationId, exception);
     var response = ErrorResponseDto.of(
         500,
         "INTERNAL_ERROR",
