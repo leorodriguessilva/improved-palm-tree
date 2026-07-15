@@ -21,6 +21,8 @@ github:
   connect-timeout: 2s
   response-timeout: 5s
   maximum-page-size: 50
+  retry:
+    max-attempts: 3
 
 ranking:
   score-version: v1

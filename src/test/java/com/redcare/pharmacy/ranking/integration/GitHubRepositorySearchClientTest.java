@@ -1,19 +1,26 @@
 package com.redcare.pharmacy.ranking.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.ExpectedCount.once;
+import static org.springframework.test.web.client.ExpectedCount.times;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.headerDoesNotExist;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.redcare.pharmacy.ranking.exception.GitHubException;
 import com.redcare.pharmacy.ranking.service.RepositorySearchClient;
+import java.net.SocketTimeoutException;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
@@ -21,12 +28,9 @@ class GitHubRepositorySearchClientTest {
 
   @Test
   void searchRepositoriesUsesGitHubApiHeadersAndQueryParameters() {
-    var client = new GitHubRepositorySearchClient(
-        "https://api.github.test",
-        "2026-03-10",
-        "github-token"
-    );
-    var server = bindServer(client);
+    var restTemplate = new RestTemplate();
+    var client = newClient("2026-03-10", "github-token", restTemplate, 3);
+    var server = bindServer(restTemplate);
 
     server.expect(once(), requestTo("https://api.github.test/search/repositories"
             + "?q=language%3AC%2B%2B+created%3A%3E%3D2026-01-01"
@@ -53,12 +57,9 @@ class GitHubRepositorySearchClientTest {
 
   @Test
   void searchRepositoriesOmitsAuthorizationHeaderWhenTokenIsBlank() {
-    var client = new GitHubRepositorySearchClient(
-        "https://api.github.test",
-        "2022-11-28",
-        ""
-    );
-    var server = bindServer(client);
+    var restTemplate = new RestTemplate();
+    var client = newClient("2022-11-28", "", restTemplate, 3);
+    var server = bindServer(restTemplate);
 
     server.expect(once(), requestTo("https://api.github.test/search/repositories"
             + "?q=language%3AJava+created%3A%3E%3D2026-01-01"
@@ -78,6 +79,70 @@ class GitHubRepositorySearchClientTest {
     var result = client.search("Java", LocalDate.parse("2026-01-01"), 1, 5);
 
     assertThat(result.repositories()).isEmpty();
+    server.verify();
+  }
+
+  @Test
+  void searchRepositoriesRetriesTransientServerErrorsAndReturnsSuccessfulAttempt() {
+    var restTemplate = new RestTemplate();
+    var client = newClient("2026-03-10", "", restTemplate, 3);
+    var server = bindServer(restTemplate);
+    var url = "https://api.github.test/search/repositories"
+        + "?q=language%3AJava+created%3A%3E%3D2026-01-01"
+        + "&sort=stars&order=desc&page=1&per_page=5";
+
+    server.expect(once(), requestTo(url)).andRespond(withServerError());
+    server.expect(once(), requestTo(url)).andRespond(withServerError());
+    server.expect(once(), requestTo(url)).andRespond(withSuccess("""
+        {
+          "total_count": 0,
+          "incomplete_results": false,
+          "items": []
+        }
+        """, MediaType.APPLICATION_JSON));
+
+    var result = client.search("Java", LocalDate.parse("2026-01-01"), 1, 5);
+
+    assertThat(result.repositories()).isEmpty();
+    server.verify();
+  }
+
+  @Test
+  void searchRepositoriesStopsAfterThreeTransientTimeoutFailures() {
+    var restTemplate = new RestTemplate();
+    var client = newClient("2026-03-10", "", restTemplate, 3);
+    var server = bindServer(restTemplate);
+    var url = "https://api.github.test/search/repositories"
+        + "?q=language%3AJava+created%3A%3E%3D2026-01-01"
+        + "&sort=stars&order=desc&page=1&per_page=5";
+
+    server.expect(times(3), requestTo(url))
+        .andRespond(withException(new SocketTimeoutException("read timed out")));
+
+    assertThatThrownBy(() -> client.search("Java", LocalDate.parse("2026-01-01"), 1, 5))
+        .isInstanceOfSatisfying(GitHubException.class, exception -> {
+          assertThat(exception.getErrorCode()).isEqualTo("GITHUB_UNAVAILABLE");
+          assertThat(exception.getHttpStatus()).isEqualTo(503);
+        });
+    server.verify();
+  }
+
+  @Test
+  void searchRepositoriesDoesNotRetryClientErrors() {
+    var restTemplate = new RestTemplate();
+    var client = newClient("2026-03-10", "", restTemplate, 3);
+    var server = bindServer(restTemplate);
+    var url = "https://api.github.test/search/repositories"
+        + "?q=language%3AJava+created%3A%3E%3D2026-01-01"
+        + "&sort=stars&order=desc&page=1&per_page=5";
+
+    server.expect(once(), requestTo(url)).andRespond(withStatus(HttpStatus.BAD_REQUEST));
+
+    assertThatThrownBy(() -> client.search("Java", LocalDate.parse("2026-01-01"), 1, 5))
+        .isInstanceOfSatisfying(GitHubException.class, exception -> {
+          assertThat(exception.getErrorCode()).isEqualTo("INVALID_GITHUB_RESPONSE");
+          assertThat(exception.getHttpStatus()).isEqualTo(400);
+        });
     server.verify();
   }
 
@@ -120,8 +185,22 @@ class GitHubRepositorySearchClientTest {
     assertThat(result.incompleteResults()).isFalse();
   }
 
-  private MockRestServiceServer bindServer(GitHubRepositorySearchClient client) {
-    RestTemplate restTemplate = (RestTemplate) ReflectionTestUtils.getField(client, "restTemplate");
+  private GitHubRepositorySearchClient newClient(
+      String apiVersion,
+      String token,
+      RestTemplate restTemplate,
+      int maxAttempts
+  ) {
+    return new GitHubRepositorySearchClient(
+        "https://api.github.test",
+        apiVersion,
+        token,
+        restTemplate,
+        maxAttempts
+    );
+  }
+
+  private MockRestServiceServer bindServer(RestTemplate restTemplate) {
     return MockRestServiceServer.bindTo(restTemplate).build();
   }
 }

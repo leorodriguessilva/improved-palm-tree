@@ -95,6 +95,8 @@ github:
   connect-timeout: 2s
   response-timeout: 5s
   maximum-page-size: 50
+  retry:
+    max-attempts: 3
 
 springdoc:
   api-docs:

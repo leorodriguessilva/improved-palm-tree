@@ -8,6 +8,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -26,16 +27,20 @@ public class GitHubRepositorySearchClient implements RepositorySearchClient {
   private final String apiVersion;
   private final String token;
   private final RestTemplate restTemplate;
+  private final int maxAttempts;
 
   public GitHubRepositorySearchClient(
       @Value("${github.base-url:https://api.github.com}") String baseUrl,
       @Value("${github.api-version:2026-03-10}") String apiVersion,
-      @Value("${github.token:#{null}}") String token
+      @Value("${github.token:#{null}}") String token,
+      @Qualifier("githubRestTemplate") RestTemplate restTemplate,
+      @Value("${github.retry.max-attempts:3}") int maxAttempts
   ) {
     this.baseUrl = baseUrl;
     this.apiVersion = apiVersion;
     this.token = token;
-    this.restTemplate = new RestTemplate();
+    this.restTemplate = restTemplate;
+    this.maxAttempts = Math.max(1, maxAttempts);
   }
 
   @Override
@@ -44,13 +49,7 @@ public class GitHubRepositorySearchClient implements RepositorySearchClient {
       String query = buildQuery(language, createdAfter);
       URI url = buildUrl(query, page, limit);
 
-      var responseEntity = restTemplate.exchange(
-          url,
-          HttpMethod.GET,
-          new HttpEntity<>(buildHeaders()),
-          GitHubSearchResponseDto.class
-      );
-      var response = responseEntity.getBody();
+      var response = executeWithRetries(url);
       if (response == null) {
         throw new GitHubException(
             "INVALID_GITHUB_RESPONSE",
@@ -104,6 +103,26 @@ public class GitHubRepositorySearchClient implements RepositorySearchClient {
           e
       );
     }
+  }
+
+  private GitHubSearchResponseDto executeWithRetries(URI url) {
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        var responseEntity = restTemplate.exchange(
+            url,
+            HttpMethod.GET,
+            new HttpEntity<>(buildHeaders()),
+            GitHubSearchResponseDto.class
+        );
+        return responseEntity.getBody();
+      } catch (HttpServerErrorException | ResourceAccessException e) {
+        if (attempt == maxAttempts) {
+          throw e;
+        }
+      }
+    }
+
+    throw new IllegalStateException("Retry loop completed without returning or throwing");
   }
 
   private void handleHttpClientError(org.springframework.web.client.HttpClientErrorException e) {
