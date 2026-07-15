@@ -48,4 +48,4 @@ cache:
 
 logging:
   level:
-    com.redcare.pharmacy.ranking: INFO
+    com.rf.ranking: INFO
