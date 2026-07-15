@@ -2,6 +2,8 @@ package com.redcare.pharmacy.ranking.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,7 +23,25 @@ class OpenApiDocumentationTest {
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(response.getBody())
         .contains("\"openapi\"")
-        .contains("\"paths\"");
+        .contains("\"paths\"")
+        .contains("/api/v1/repositories/rank")
+        .contains("/api/v1/health")
+        .contains("/api/v1/health/readiness")
+        .contains("scoreVersion")
+        .contains("githubTotalCount");
+  }
+
+  @Test
+  void staticOpenApiDocumentsRuntimePathsAndErrorSchema() throws Exception {
+    String openApi = Files.readString(Path.of("src/main/resources/openapi.yaml"));
+
+    assertThat(openApi)
+        .contains("/api/v1/repositories/rank")
+        .contains("/api/v1/health")
+        .contains("/api/v1/health/readiness")
+        .contains("correlationId")
+        .contains("GITHUB_RATE_LIMITED")
+        .contains("Rank within the GitHub candidate page");
   }
 }
 

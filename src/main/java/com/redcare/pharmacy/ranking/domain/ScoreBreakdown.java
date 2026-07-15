@@ -1,13 +1,26 @@
 package com.redcare.pharmacy.ranking.domain;
 
 public record ScoreBreakdown(
+    double rawTotal,
     double total,
     double starsContribution,
     double forksContribution,
     double recencyContribution
 ) {
 
+  public ScoreBreakdown(
+      double total,
+      double starsContribution,
+      double forksContribution,
+      double recencyContribution
+  ) {
+    this(total, total, starsContribution, forksContribution, recencyContribution);
+  }
+
   public ScoreBreakdown {
+    if (rawTotal < 0 || rawTotal > 100) {
+      throw new IllegalArgumentException("rawTotal score must be between 0 and 100");
+    }
     if (total < 0 || total > 100) {
       throw new IllegalArgumentException("total score must be between 0 and 100");
     }

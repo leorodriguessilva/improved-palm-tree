@@ -6,13 +6,13 @@ import com.redcare.pharmacy.ranking.exception.GitHubException;
 import com.redcare.pharmacy.ranking.exception.ValidationException;
 import com.redcare.pharmacy.ranking.service.RepositoryRankingService;
 import java.time.LocalDate;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -90,8 +90,26 @@ public class RepositoryRankingController {
     return ResponseEntity.status(e.getHttpStatus()).body(response);
   }
 
+  @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+  public ResponseEntity<ErrorResponseDto> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+    var correlationId = ErrorResponseDto.generateCorrelationId();
+    String errorCode = switch (e.getName()) {
+      case "page" -> "INVALID_PAGE";
+      case "limit" -> "INVALID_LIMIT";
+      default -> "INVALID_REQUEST";
+    };
+    var response = ErrorResponseDto.of(
+        400,
+        errorCode,
+        e.getName() + " has an invalid value",
+        "/api/v1/repositories/rank",
+        correlationId
+    );
+    return ResponseEntity.status(400).body(response);
+  }
+
   @ExceptionHandler(Exception.class)
-  public ResponseEntity<ErrorResponseDto> handleException(Exception e) {
+  public ResponseEntity<ErrorResponseDto> handleException() {
     var correlationId = ErrorResponseDto.generateCorrelationId();
     var response = ErrorResponseDto.of(
         500,

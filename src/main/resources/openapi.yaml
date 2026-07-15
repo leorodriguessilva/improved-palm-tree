@@ -2,14 +2,16 @@ openapi: 3.0.3
 info:
   title: Repository Ranking Service
   description: |
-    GitHub repository ranking service using contract-first and test-first approach.
+    GitHub repository ranking service using a deterministic scoring model.
 
     This service ranks repositories by a deterministic score based on:
     - Stars (60% weight) - public popularity
     - Forks (25% weight) - engagement and reuse
     - Recency (15% weight) - recent activity
 
-    Only the GitHub `/search/repositories` endpoint is used.
+    Only the GitHub `/search/repositories` endpoint is used. Rank values are
+    relative to the candidate page returned by GitHub and are not global ranks
+    across all repositories matching the query.
   version: 1.0.0
   contact:
     name: Redcare Pharmacy
@@ -24,7 +26,8 @@ paths:
       summary: Rank repositories by composite score
       description: |
         Search and rank GitHub repositories by a deterministic score combining
-        stars, forks, and recency.
+        stars, forks, and recency. Rank values are relative to the GitHub
+        candidate page requested with `page` and `limit`.
       operationId: rankRepositories
       parameters:
         - name: language
@@ -118,7 +121,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /health:
+  /api/v1/health:
     get:
       summary: Health check endpoint
       operationId: health
@@ -126,7 +129,7 @@ paths:
         '200':
           description: Service is healthy
 
-  /health/readiness:
+  /api/v1/health/readiness:
     get:
       summary: Readiness check endpoint
       operationId: readiness
@@ -277,7 +280,7 @@ components:
           $ref: '#/components/schemas/ScoreBreakdown'
         rank:
           type: integer
-          description: Rank in result set (1-indexed)
+          description: Rank within the GitHub candidate page (1-indexed), not a global GitHub rank
           example: 1
 
     ScoreBreakdown:

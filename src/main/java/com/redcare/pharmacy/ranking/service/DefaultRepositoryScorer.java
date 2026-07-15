@@ -26,26 +26,26 @@ public class DefaultRepositoryScorer implements RepositoryScorer {
     double forksContribution = forkComponent * config.getWeights().getForks() * 100;
     double recencyContribution = recencyComponent * config.getWeights().getRecency() * 100;
 
-    double total = Math.min(100.0, starsContribution + forksContribution + recencyContribution);
-    total = Math.round(total * 100.0) / 100.0;
+    double rawTotal = Math.min(100.0, starsContribution + forksContribution + recencyContribution);
+    double total = Math.round(rawTotal * 100.0) / 100.0;
 
     starsContribution = Math.round(starsContribution * 100.0) / 100.0;
     forksContribution = Math.round(forksContribution * 100.0) / 100.0;
     recencyContribution = Math.round(recencyContribution * 100.0) / 100.0;
 
-    return new ScoreBreakdown(total, starsContribution, forksContribution, recencyContribution);
+    return new ScoreBreakdown(rawTotal, total, starsContribution, forksContribution, recencyContribution);
   }
 
   private double calculateStarComponent(int stars) {
     int referenceMaximum = config.getStars().getReferenceMaximum();
     int normalizedStars = Math.max(0, stars);
-    return Math.min(1.0, Math.log(1 + normalizedStars) / Math.log(1 + referenceMaximum));
+    return Math.min(1.0, Math.log(1.0 + normalizedStars) / Math.log(1.0 + referenceMaximum));
   }
 
   private double calculateForkComponent(int forks) {
     int referenceMaximum = config.getForks().getReferenceMaximum();
     int normalizedForks = Math.max(0, forks);
-    return Math.min(1.0, Math.log(1 + normalizedForks) / Math.log(1 + referenceMaximum));
+    return Math.min(1.0, Math.log(1.0 + normalizedForks) / Math.log(1.0 + referenceMaximum));
   }
 
   private double calculateRecencyComponent(java.time.Instant updatedAt, Clock clock) {

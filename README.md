@@ -6,12 +6,12 @@ A Spring Boot 3.x REST API service for ranking GitHub repositories using a deter
 
 ### Prerequisites
 - Java 21+
-- Maven 3.8+
+- No local Maven installation is required for normal builds; use the included Maven wrapper.
 
 ### Build
 
 ```bash
-./mvnw clean package
+./mvnw clean verify
 ```
 
 ### Run
@@ -107,20 +107,22 @@ springdoc:
 
 ### Optional GitHub Token
 
-Set the `GITHUB_TOKEN` environment variable to use authenticated API requests (higher rate limits):
+Set the `GITHUB_TOKEN` environment variable to use authenticated API requests, which usually provide higher GitHub API limits than unauthenticated requests:
 
 ```bash
 export GITHUB_TOKEN=your_github_token
 ./mvnw spring-boot:run
 ```
 
-Without a token, the service uses unauthenticated requests (60 requests/hour).
+Without a token, the service uses unauthenticated requests and is more likely to encounter GitHub rate limits.
 
 ## API
 
 ### GET /api/v1/repositories/rank
 
 Ranks repositories by composite score.
+
+Rank values are relative to the candidate page returned by GitHub for the requested `page` and `limit`. They are not global ranks across all repositories matching the query.
 
 **Query Parameters:**
 - `language` (required): Programming language (e.g., `Java`, `Python`)
@@ -185,11 +187,11 @@ curl -G "http://localhost:8080/api/v1/repositories/rank" \
   -H "User-Agent: repository-ranking-client/1.0"
 ```
 
-### GET /health
+### GET /api/v1/health
 
 Health check endpoint.
 
-### GET /health/readiness
+### GET /api/v1/health/readiness
 
 Readiness check endpoint.
 
@@ -220,14 +222,14 @@ Errors follow RFC 7807 Problem Details format:
 
 ## Caching
 
-Successful ranking results are cached for 5 minutes by default. Cache key includes:
+Successful ranking results are cached in a thread-safe bounded Caffeine cache for 5 minutes by default. Cache key includes:
 - Language
 - Created after date
 - Page number
 - Limit
 - Score version
 
-Cache is per-instance and stored in memory. For distributed deployments, configure a shared cache backend (e.g., Redis).
+Cache is per-instance and stored in memory. TTL and maximum size are enforced by Caffeine. For distributed deployments, configure a shared cache backend (e.g., Redis).
 
 ## GitHub Integration
 
@@ -236,7 +238,8 @@ The service uses only the GitHub `/search/repositories` endpoint:
 - Single API call per uncached request
 - No additional enrichment calls
 - No commit history, contributor, or security data
-- Respects GitHub API rate limits (60 req/hour unauthenticated, 6000 with token)
+- Handles GitHub rate-limit responses returned as `429` or as `403` with `X-RateLimit-Remaining: 0`
+- Uses `Retry-After` or `X-RateLimit-Reset` when GitHub provides retry metadata
 
 ## Limitations
 
@@ -261,10 +264,11 @@ It answers one question: **Which repositories are the strongest combination of p
 
 ### Known Limitations
 
-1. **GitHub Rate Limiting**: Without a token, rate limit is 60 requests/hour. With token, 6000/hour.
+1. **GitHub Rate Limiting**: GitHub Search API requests have specific rate limits that may differ from general REST API limits. The service maps primary and secondary rate limits to local `429` responses when GitHub returns `429` or `403` with no remaining quota.
 2. **In-Memory Cache**: Cache is per-instance; distributed deployments need shared cache.
 3. **Incomplete Results**: GitHub search may return `incomplete_results: true` for very broad queries.
 4. **Accessibility**: Highest page accessible depends on GitHub's search API limits (~1000 total results).
+5. **Page-Local Ranking**: The service re-ranks only the candidate page returned by GitHub, not every repository matching the query globally.
 
 ## Testing
 
@@ -282,9 +286,10 @@ Run specific test class:
 
 ### Test Categories
 
-- **Unit tests**: Scoring logic, ranking, validation
-- **Integration tests**: GitHub client communication (with WireMock)
-- **Contract tests**: OpenAPI compliance
+- **Unit tests**: Scoring logic, ranking service orchestration, validation, and cache behavior
+- **MVC tests**: Controller validation, successful responses, and stable error responses with mocked service boundaries
+- **HTTP client tests**: GitHub client communication with `MockRestServiceServer`
+- **Contract tests**: Generated OpenAPI availability plus static contract path/error-schema checks
 
 Tests require no GitHub token and make no real GitHub API calls.
 
@@ -304,13 +309,13 @@ http://localhost:8080/swagger-ui.html
 
 ## Implementation Notes
 
-### Contract-First Design
+### API Contract
 
-API contract is defined in `src/main/resources/openapi.yaml` before implementation.
+The static API contract is kept in `src/main/resources/openapi.yaml`, and tests verify that key documented paths match runtime endpoints.
 
-### Test-First Scoring
+### Tested Scoring
 
-Scoring tests are written before scorer implementation:
+The scoring model is covered by deterministic unit tests:
 - Star component tests
 - Fork component tests
 - Recency component tests
@@ -319,13 +324,13 @@ Scoring tests are written before scorer implementation:
 ### Deterministic Ranking
 
 Ranking is deterministic with stable tie-breaking:
-1. Final score (descending)
+1. Raw internal score (descending; displayed score remains rounded)
 2. Stars (descending)
 3. Forks (descending)
 4. Updated date (descending)
 5. Full repository name (ascending)
 
-Same input always produces same ranking.
+Same input always produces same page-local ranking.
 
 ### Immutable Domain Models
 
@@ -334,7 +339,7 @@ All domain objects are records (immutable):
 - `RankedRepository`
 - `RankingRequest`
 - `RankingResult`
-- `ScoreBreakdown`
+- `ScoreBreakdown` (contains raw internal score plus rounded displayed score)
 
 ### Separation of Concerns
 
@@ -386,7 +391,7 @@ Run the container:
 docker run --rm -p 8080:8080 repository-ranking-service:latest
 ```
 
-The service will be available on `http://localhost:8080`.
+The Docker build uses public base images and runs the Maven verification suite before creating the runtime image. The service will be available on `http://localhost:8080`.
 
 If you prefer a quick local build without Docker:
 
@@ -399,8 +404,7 @@ java -jar target/*.jar
 
 - Spring Boot 3.2.0
 - Spring Web
-- Spring WebFlux (HTTP client)
-- Jackson (JSON processing)
+- Caffeine (bounded in-memory cache)
 - SpringDoc OpenAPI (API documentation)
-- WireMock (testing)
+- Spring MVC test and `MockRestServiceServer` (testing)
 - AssertJ (assertions)

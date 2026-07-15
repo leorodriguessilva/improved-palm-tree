@@ -6,6 +6,7 @@ import com.redcare.pharmacy.ranking.service.RepositorySearchClient;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 @Component
@@ -71,34 +73,35 @@ public class GitHubRepositorySearchClient implements RepositorySearchClient {
       handleHttpClientError(e);
       throw new GitHubException(
           "INVALID_GITHUB_RESPONSE",
-          "GitHub returned error: " + e.getStatusCode(),
-          e.getStatusCode().value()
+          "GitHub returned an invalid or unsupported response",
+          502,
+          e
       );
     } catch (HttpServerErrorException e) {
       throw new GitHubException(
           "GITHUB_UNAVAILABLE",
-          "GitHub server error: " + e.getStatusCode(),
-          e.getStatusCode().value()
+          "GitHub is temporarily unavailable",
+          503,
+          e
       );
     } catch (ResourceAccessException e) {
       throw new GitHubException(
           "GITHUB_UNAVAILABLE",
-          "Failed to reach GitHub: " + e.getMessage(),
+          "GitHub is temporarily unavailable",
           503,
           e
       );
-    } catch (Exception e) {
-      if (e.getMessage() != null && e.getMessage().contains("JSON")) {
-        throw new GitHubException(
-            "INVALID_GITHUB_RESPONSE",
-            "Failed to parse GitHub response",
-            502,
-            e
-        );
-      }
+    } catch (RestClientException e) {
       throw new GitHubException(
           "INVALID_GITHUB_RESPONSE",
-          "Unexpected error communicating with GitHub",
+          "Failed to parse GitHub response",
+          502,
+          e
+      );
+    } catch (RuntimeException e) {
+      throw new GitHubException(
+          "INVALID_GITHUB_RESPONSE",
+          "GitHub returned an invalid or unsupported response",
           502,
           e
       );
@@ -125,18 +128,56 @@ public class GitHubRepositorySearchClient implements RepositorySearchClient {
     throw new IllegalStateException("Retry loop completed without returning or throwing");
   }
 
-  private void handleHttpClientError(org.springframework.web.client.HttpClientErrorException e) {
-    if (e.getStatusCode().value() == 429) {
-      String retryAfter = e.getResponseHeaders() != null
-          ? e.getResponseHeaders().getFirst("Retry-After")
-          : null;
-      Integer retrySeconds = retryAfter != null ? Integer.parseInt(retryAfter) : null;
+  private void handleHttpClientError(HttpClientErrorException e) {
+    if (isRateLimited(e)) {
       throw new GitHubException(
           "GITHUB_RATE_LIMITED",
           "GitHub API rate limit exceeded",
           429,
-          retrySeconds
+          calculateRetryAfter(e)
       );
+    }
+  }
+
+  private boolean isRateLimited(HttpClientErrorException e) {
+    int status = e.getStatusCode().value();
+    if (status == 429) {
+      return true;
+    }
+    if (status != 403 || e.getResponseHeaders() == null) {
+      return false;
+    }
+    return "0".equals(e.getResponseHeaders().getFirst("X-RateLimit-Remaining"));
+  }
+
+  private Integer calculateRetryAfter(HttpClientErrorException e) {
+    if (e.getResponseHeaders() == null) {
+      return 60;
+    }
+
+    Integer retryAfter = parsePositiveInt(e.getResponseHeaders().getFirst("Retry-After"));
+    if (retryAfter != null) {
+      return retryAfter;
+    }
+
+    Integer resetEpochSeconds = parsePositiveInt(e.getResponseHeaders().getFirst("X-RateLimit-Reset"));
+    if (resetEpochSeconds != null) {
+      long waitSeconds = resetEpochSeconds - Instant.now().getEpochSecond();
+      return (int) Math.max(1, Math.min(waitSeconds, Integer.MAX_VALUE));
+    }
+
+    return 60;
+  }
+
+  private Integer parsePositiveInt(String value) {
+    if (value == null || value.isBlank()) {
+      return null;
+    }
+    try {
+      int parsed = Integer.parseInt(value.trim());
+      return parsed > 0 ? parsed : null;
+    } catch (NumberFormatException e) {
+      return null;
     }
   }
 
@@ -149,6 +190,7 @@ public class GitHubRepositorySearchClient implements RepositorySearchClient {
   private HttpHeaders buildHeaders() {
     HttpHeaders headers = new HttpHeaders();
     headers.setAccept(List.of(MediaType.valueOf("application/vnd.github+json")));
+    headers.set(HttpHeaders.USER_AGENT, "repository-ranking-service/1.0");
     headers.set("X-GitHub-Api-Version", apiVersion);
     if (token != null && !token.isBlank()) {
       headers.setBearerAuth(token);

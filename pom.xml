@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>Repository Ranking Service</name>
-    <description>GitHub repository ranking service using contract-first and test-first approach</description>
+    <description>GitHub repository ranking service using deterministic scoring</description>
 
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -24,7 +24,10 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <spring-framework.version>6.1.21</spring-framework.version>
+        <tomcat.version>10.1.57</tomcat.version>
         <springdoc.version>2.1.0</springdoc.version>
+        <assertj.version>3.27.7</assertj.version>
         <wiremock.version>3.3.1</wiremock.version>
     </properties>
 
@@ -42,16 +45,10 @@
             <version>${springdoc.version}</version>
         </dependency>
 
-        <!-- HTTP Client -->
+        <!-- Cache -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
-        </dependency>
-
-        <!-- Logging -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-logging</artifactId>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
         </dependency>
 
         <!-- Testing -->
@@ -67,16 +64,6 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Jackson -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jsr310</artifactId>
-        </dependency>
     </dependencies>
 
     <build>

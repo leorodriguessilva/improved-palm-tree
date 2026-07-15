@@ -80,7 +80,7 @@ public class DefaultRepositoryRankingService implements RepositoryRankingService
 
   private Comparator<ScoredRepository> getRankingComparator() {
     return Comparator
-        .comparing(ScoredRepository::score, Comparator.comparingDouble(ScoreBreakdown::total))
+        .comparing(ScoredRepository::score, Comparator.comparingDouble(ScoreBreakdown::rawTotal))
         .reversed()
         .thenComparing(scoredRepository -> scoredRepository.candidate().stars(), Comparator.reverseOrder())
         .thenComparing(scoredRepository -> scoredRepository.candidate().forks(), Comparator.reverseOrder())
