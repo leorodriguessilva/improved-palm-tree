@@ -443,3 +443,15 @@ java -jar target/*.jar
 - SpringDoc OpenAPI (API documentation)
 - Spring MVC test and `MockRestServiceServer` (testing)
 - AssertJ (assertions)
+
+## Notes
+
+- Used Matt Pocock Skill [grill-me](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me), to allow AI to understand better the problem, and fill the gaps in its context window
+- Used GPT-5.6 Sol as a code reviewer
+- Used GPT-5 Mini as an implementor
+
+## Improvements
+ - Use web flux http client, for native retry and backoff handling
+ - Evaluate the usage of a distributed cache, to remove memory pressure over the app instances
+ - Evaluate the introduction of a cold cache storage, to allow serving stale requests even if Github API is down
+ - Use other Github APIs repo stats like code_frequency and participation to retrieve more significant information, and improve the ranking based on project contribution, security/maturity and community health
