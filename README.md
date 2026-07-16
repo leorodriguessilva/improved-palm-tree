@@ -449,6 +449,7 @@ java -jar target/*.jar
 - Used Matt Pocock Skill [grill-me](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me), to allow AI to understand better the problem, and fill the gaps in its context window
 - Used GPT-5.6 Sol as a code reviewer
 - Used GPT-5 Mini as an implementor
+- Based on other Gitbub ranking repo tools, like Github itself, OpenSSF, SourceRank and other projects
 
 ## Improvements
  - Use web flux http client, for native retry and backoff handling
